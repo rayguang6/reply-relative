@@ -1,15 +1,18 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   MAX_STYLES,
   STYLE_DEF,
   COLOR_MAP,
+  CREDIT_COST,
+  CREDITS_PER_VIDEO,
   getEnemyAvatar,
   inferEnemyGender,
   RELATION_OPTIONS,
   type UserConfig,
 } from '@/lib/constants'
+import { getRandomAd, getRequiredWatchDuration, type AdVideo } from '@/lib/ads'
 
 type Message =
   | { id: string; type: 'enemy'; text: string }
@@ -25,10 +28,34 @@ const initialConfig: UserConfig = {
   enemyGender: '女',
 }
 
+/** Star/sparkle icon for credits (AI-style). */
+function CreditIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden
+    >
+      <path d="M12 2l2.4 7.4h7.6l-6 4.6 2.3 7-6.3-4.6L5.7 21l2.3-7-6-4.6h7.6L12 2z" />
+    </svg>
+  )
+}
+
+/** Video/play icon for "watch ad". */
+function VideoIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M8 5v14l11-7L8 5zm2 3.07l6.57 3.87L10 15.93V8.07z" />
+      <path d="M4 6h2v12H4zm14 0h2v12h-2z" />
+    </svg>
+  )
+}
+
 export default function ChatPage() {
   const [userConfig, setUserConfig] = useState<UserConfig>(initialConfig)
   const [selectedStyles, setSelectedStyles] = useState<Set<string>>(
-    new Set(['normal', 'savage', 'funny'])
+    new Set(['normal', 'savage', 'funny', 'philosopher'])
   )
   const [messages, setMessages] = useState<Message[]>([])
   const [showWelcome, setShowWelcome] = useState(true)
@@ -41,8 +68,58 @@ export default function ChatPage() {
   const [tweakInput, setTweakInput] = useState('')
   const [tweakSubmitting, setTweakSubmitting] = useState(false)
   const [sending, setSending] = useState(false)
+  const [credits, setCredits] = useState<number | null>(null)
+  const [lowCreditsPopup, setLowCreditsPopup] = useState(false)
+  const [videoAdModal, setVideoAdModal] = useState<AdVideo | null>(null)
+  const [adCountdown, setAdCountdown] = useState(0)
+  const [videoAdRewardGranted, setVideoAdRewardGranted] = useState(false)
+  const [videoMuted, setVideoMuted] = useState(true)
+  const adGrantedRef = useRef(false)
+  const prevAdCountdownRef = useRef(-1)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const userInputRef = useRef<HTMLTextAreaElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+
+  useEffect(() => {
+    fetch('/api/credits', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d: { credits?: number }) => setCredits(d.credits ?? 0))
+      .catch(() => setCredits(0))
+  }, [])
+
+  // Video ad: required watch time countdown; after that grant credits and allow close (video keeps playing)
+  useEffect(() => {
+    if (!videoAdModal) {
+      adGrantedRef.current = false
+      setVideoAdRewardGranted(false)
+      return
+    }
+    prevAdCountdownRef.current = getRequiredWatchDuration() // avoid granting on open when state is still 0
+    setVideoMuted(false) // start with sound (user already clicked to watch)
+    const duration = getRequiredWatchDuration()
+    setAdCountdown(duration)
+    setVideoAdRewardGranted(false)
+    videoRef.current?.play().catch(() => {})
+    const id = setInterval(() => {
+      setAdCountdown((c) => (c <= 1 ? 0 : c - 1))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [videoAdModal])
+  useEffect(() => {
+    // Only grant when countdown actually reached 0 from 1 (not the initial 0 before state updates)
+    const prev = prevAdCountdownRef.current
+    prevAdCountdownRef.current = adCountdown
+    if (!videoAdModal || adCountdown !== 0 || prev !== 1) return
+    if (adGrantedRef.current) return
+    adGrantedRef.current = true
+    fetch('/api/credits', { method: 'POST', credentials: 'include' })
+      .then((r) => r.json())
+      .then((d: { credits?: number }) => {
+        setCredits(d.credits ?? 0)
+        setVideoAdRewardGranted(true)
+      })
+      .catch(() => setVideoAdModal(null))
+  }, [videoAdModal, adCountdown])
 
   const overlayVisible = configOpen || styleDrawerOpen
 
@@ -71,7 +148,7 @@ export default function ChatPage() {
     const styleInstructions = Array.from(selectedStyles)
       .map((key) => `"${key}": ${STYLE_DEF[key].desc}`)
       .join(',\n')
-    return `You are a Malaysian CNY relative-defense assistant. Context: User(${userConfig.status}, ${userConfig.age || '未知'}yo) vs ${userConfig.enemy}(${userConfig.enemyGender}). Output: JSON with keys: { ${styleInstructions} }. Use Manglish/Chinese mix. Variety in sentence structures. Only JSON.`
+    return `You are a Malaysian CNY relative-defense assistant. Context: User(${userConfig.status}, ${userConfig.age || '未知'}yo) vs ${userConfig.enemy}(${userConfig.enemyGender}). Output: JSON with keys: { ${styleInstructions} }. 主要用中文（普通话），不要用广东话。可少量夹杂英文/Manglish。Variety in sentence structures. Only JSON.`
   }, [userConfig, selectedStyles])
 
   const sendMessage = useCallback(async () => {
@@ -95,8 +172,26 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: buildPrompt(), userMessage: text }),
+        credentials: 'include',
       })
-      const json = (await res.json()) as { content?: Record<string, string> }
+      const json = (await res.json()) as {
+        content?: Record<string, string>
+        error?: string
+        remaining?: number
+      }
+      if (res.status === 402) {
+        setCredits(json.remaining ?? 0)
+        setLowCreditsPopup(true)
+        setMessages((m) =>
+          m.filter((x) => x.id !== loadingId).concat({
+            id: `ai-${Date.now()}`,
+            type: 'ai-simple',
+            text: json.error ?? 'Credits 不够了，用完了。',
+          })
+        )
+        return
+      }
+      if (json.remaining !== undefined) setCredits(json.remaining)
       setMessages((m) =>
         m.filter((x) => x.id !== loadingId).concat(
           json.content
@@ -129,8 +224,15 @@ export default function ChatPage() {
           originalText: tweakModal.text,
           instruction: tweakInput.trim(),
         }),
+        credentials: 'include',
       })
-      const json = await res.json()
+      const json = (await res.json()) as { text?: string; error?: string; remaining?: number }
+      if (res.status === 402) {
+        setCredits(json.remaining ?? 0)
+        setLowCreditsPopup(true)
+        return
+      }
+      if (json.remaining !== undefined) setCredits(json.remaining)
       if (json.text) {
         const el = document.getElementById(tweakModal.elementId)
         if (el) el.textContent = json.text
@@ -173,14 +275,26 @@ export default function ChatPage() {
             <p className="text-[10px] text-gray-500 font-medium">通关所有新年灵魂拷问</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setConfigOpen((o) => !o)}
-          className="flex items-center gap-1.5 bg-white hover:bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-full text-xs font-bold text-gray-700 transition-all shadow-sm active:scale-95"
-        >
-          <span className="text-base">⚙️</span>
-          <span>备战设定</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {credits !== null && (
+            <button
+              type="button"
+              onClick={() => setLowCreditsPopup(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border transition-colors text-amber-600 bg-amber-50 border-amber-200 hover:bg-amber-100 cursor-pointer"
+            >
+              <CreditIcon className="w-4 h-4 text-amber-500" />
+              <span className="text-xs font-bold tabular-nums">{credits}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setConfigOpen((o) => !o)}
+            className="flex items-center gap-1.5 bg-white hover:bg-gray-50 border border-gray-200 px-3.5 py-2 rounded-full text-xs font-bold text-gray-700 transition-all shadow-sm active:scale-95"
+          >
+            <span className="text-base">⚙️</span>
+            <span>备战设定</span>
+          </button>
+        </div>
       </header>
 
       {/* Tweak modal */}
@@ -204,7 +318,7 @@ export default function ChatPage() {
               type="text"
               value={tweakInput}
               onChange={(e) => setTweakInput(e.target.value)}
-              placeholder="例：再凶一点 / 加点广东话 / 简短点"
+              placeholder="例：再凶一点 / 简短点 / 口语化一点"
               className="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 text-sm focus:border-red-500 focus:ring-2 focus:ring-red-100 focus:outline-none text-gray-800 mb-4 transition-all"
             />
             <div className="flex gap-2 justify-end">
@@ -222,8 +336,107 @@ export default function ChatPage() {
                 className="px-4 py-2 rounded-lg text-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors flex items-center gap-2 shadow-lg shadow-red-500/30 disabled:opacity-50"
               >
                 {tweakSubmitting ? '修改中...' : '重新生成'}
+                <span className="inline-flex items-center gap-0.5 opacity-90">
+                  <CreditIcon className="w-3.5 h-3.5" />
+                  <span className="tabular-nums">{CREDIT_COST}</span>
+                </span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Low credits popup — not enough credits, offer watch ad */}
+      {lowCreditsPopup && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setLowCreditsPopup(false)}
+            aria-hidden
+          />
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 relative shadow-2xl z-10 border border-gray-100">
+            <h3 className="text-lg font-bold text-gray-800 mb-1">
+              {credits !== null && credits < CREDIT_COST ? '积分不够了' : '赚取积分'}
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">看一段短视频即可获得 {CREDITS_PER_VIDEO} 积分，可重复观看。</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setLowCreditsPopup(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm text-gray-500 hover:bg-gray-100 transition-colors font-medium"
+              >
+                稍后再说
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setVideoAdModal(getRandomAd())
+                  setLowCreditsPopup(false)
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm bg-red-500 hover:bg-red-600 text-white font-bold transition-colors flex items-center justify-center gap-2 shadow-lg shadow-red-500/30"
+              >
+                <VideoIcon className="w-5 h-5" />
+                赚取积分
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video ad modal — uncloseable until required watch time (countdown), then can close; video plays in full */}
+      {videoAdModal && (
+        <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-black/90 p-4">
+          <div className="w-full max-w-lg flex flex-col items-center">
+            <div className="relative w-full rounded-xl overflow-hidden bg-black aspect-video">
+              <video
+                ref={videoRef}
+                src={videoAdModal.src}
+                className="w-full h-full object-contain"
+                playsInline
+                muted={videoMuted}
+              />
+              <div className="absolute top-2 right-2">
+                <button
+                  type="button"
+                  onClick={() => setVideoMuted((m) => !m)}
+                  className="text-white bg-black/50 hover:bg-black/70 p-2 rounded-lg transition-colors flex items-center justify-center"
+                  aria-label={videoMuted ? '打开声音' : '关闭声音'}
+                >
+                  <span aria-hidden>{videoMuted ? '🔇' : '🔊'}</span>
+                </button>
+              </div>
+              <div className="absolute bottom-2 left-2 right-2 flex justify-between items-center flex-wrap gap-2">
+                {videoAdRewardGranted ? (
+                  <button
+                    type="button"
+                    onClick={() => setVideoAdModal(null)}
+                    className="text-white/80 hover:text-white text-sm font-medium px-3 py-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                  >
+                    关闭
+                  </button>
+                ) : (
+                  <span className="text-white/90 text-sm font-medium bg-black/50 px-2 py-1 rounded">
+                    观看 {adCountdown}s 后可获得积分
+                  </span>
+                )}
+                {videoAdModal.link && (
+                  <a
+                    href={videoAdModal.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex flex-col items-center justify-center text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-sm font-bold px-5 py-2.5 rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+                  >
+                    <span>马上报名</span>
+                    <span className="text-xs font-medium opacity-95">免费VIP培训</span>
+                  </a>
+                )}
+              </div>
+            </div>
+            <p className="text-white/70 text-xs mt-3">
+              {videoAdRewardGranted
+                ? `已获得 ${CREDITS_PER_VIDEO} 积分，可关闭或继续观看`
+                : `观看满 ${getRequiredWatchDuration()} 秒后将获得 ${CREDITS_PER_VIDEO} 积分`}
+            </p>
           </div>
         </div>
       )}
@@ -589,10 +802,10 @@ export default function ChatPage() {
             type="button"
             onClick={sendMessage}
             disabled={sending}
-            className="bg-red-500 hover:bg-red-600 text-white w-12 h-12 rounded-2xl flex items-center justify-center transition-all disabled:opacity-50 disabled:grayscale shrink-0 shadow-lg shadow-red-900/30 active:scale-95"
+            className="bg-red-500 hover:bg-red-600 text-white w-12 h-12 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-all disabled:opacity-50 disabled:grayscale shrink-0 shadow-lg shadow-red-900/30 active:scale-95"
           >
             <svg
-              className="w-6 h-6 ml-0.5"
+              className="w-5 h-5 ml-0.5"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -604,6 +817,10 @@ export default function ChatPage() {
                 d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"
               />
             </svg>
+            <span className="inline-flex items-center gap-0.5 text-[10px] font-bold opacity-90">
+              <CreditIcon className="w-3 h-3" />
+              <span className="tabular-nums">{CREDIT_COST}</span>
+            </span>
           </button>
         </div>
       </footer>

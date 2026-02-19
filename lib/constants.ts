@@ -1,5 +1,10 @@
 export const MAX_STYLES = 4
 
+/** Cost in credits per action (send message, tweak/regenerate). Must match lib/credits.ts COST_PER_ACTION. */
+export const CREDIT_COST = 10
+/** Credits granted per completed ad watch. Must match lib/credits.ts CREDITS_PER_VIDEO. */
+export const CREDITS_PER_VIDEO = 30
+
 export const STYLE_DEF: Record<
   string,
   { label: string; desc: string; color: string; icon: string }

@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { checkAndConsume } from '@/lib/credits'
 
 const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions'
+
+function jsonWithCookie(data: object, status: number, setCookie?: string) {
+  const res = NextResponse.json(data, { status })
+  if (setCookie) res.headers.set('Set-Cookie', setCookie)
+  return res
+}
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.DEEPSEEK_API_KEY
@@ -8,6 +15,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: 'DEEPSEEK_API_KEY not configured' },
       { status: 500 }
+    )
+  }
+
+  const credit = await checkAndConsume(req)
+  if (!credit.allowed) {
+    return jsonWithCookie(
+      { error: 'Credits 不够了，用完了。', remaining: credit.remaining ?? 0 },
+      402,
+      credit.setCookie
     )
   }
 
@@ -45,7 +61,11 @@ export async function POST(req: NextRequest) {
     }
 
     const content = parseJsonContent(raw)
-    return NextResponse.json(content ? { content } : {})
+    return jsonWithCookie(
+      content ? { content, remaining: credit.remaining } : {},
+      200,
+      credit.setCookie
+    )
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Request failed' },
