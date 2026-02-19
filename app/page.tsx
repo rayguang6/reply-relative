@@ -326,10 +326,10 @@ export default function ChatPage() {
         aria-hidden
       />
 
-      {/* Chat */}
+      {/* Chat — scrollable; min-h-0 so flex child can shrink and scroll */}
       <main
         ref={chatContainerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-8 hide-scrollbar pb-[180px]"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 space-y-8 hide-scrollbar chat-main-pb"
         onClick={() => setStyleDrawerOpen(false)}
       >
         {showWelcome && (
@@ -538,13 +538,13 @@ export default function ChatPage() {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="absolute bottom-0 w-full bg-white/90 backdrop-blur-xl border-t border-gray-200 z-10 flex flex-col shadow-[0_-4px_20px_rgba(0,0,0,0.03)]">
+      {/* Footer — fixed at bottom so chatbox is always visible on mobile */}
+      <footer className="fixed inset-x-0 bottom-0 w-full bg-white/95 backdrop-blur-xl border-t border-gray-200 z-30 flex flex-col shadow-[0_-4px_20px_rgba(0,0,0,0.06)]">
         <div
-          className="w-full px-4 py-2 border-b border-gray-100 flex justify-between items-center bg-white cursor-pointer"
+          className="w-full px-4 py-2 border-b border-gray-100 flex justify-between items-center bg-white cursor-pointer shrink-0"
           onClick={() => setStyleDrawerOpen(true)}
         >
-          <div className="flex flex-wrap items-center gap-2 overflow-hidden flex-1 mr-2">
+          <div className="flex flex-wrap items-center gap-2 overflow-hidden flex-1 mr-2 min-w-0">
             {Array.from(selectedStyles).map((key) => {
               const def = STYLE_DEF[key]
               const colors = COLOR_MAP[def.color]
@@ -565,7 +565,7 @@ export default function ChatPage() {
             </span>
           </span>
         </div>
-        <div className="p-3 pb-safe max-w-2xl mx-auto flex items-end gap-2 w-full bg-white">
+        <div className="p-3 pb-safe max-w-2xl mx-auto flex items-end gap-2 w-full bg-white shrink-0">
           <div className="relative flex-1">
             <textarea
               ref={userInputRef}

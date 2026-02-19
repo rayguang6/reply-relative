@@ -23,6 +23,19 @@ body {
   scrollbar-width: none;
 }
 
+/* Safe area for fixed bottom bar (e.g. chat input) on notched devices */
+.safe-area-b {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Space so chat messages scroll above the fixed footer */
+.chat-main-pb {
+  padding-bottom: max(200px, calc(200px + env(safe-area-inset-bottom, 0px)));
+}
+
 .msg-enter-left {
   animation: slideInLeft 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
