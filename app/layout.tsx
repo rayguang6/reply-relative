@@ -11,6 +11,10 @@ const noto = Noto_Sans_SC({
 
 export const metadata: Metadata = {
   title: '胡言乱语文学 v3.3',
+  icons: {
+    icon: '/images/app-icon.png',
+    apple: '/images/app-icon.png',
+  },
 }
 
 export default function RootLayout({

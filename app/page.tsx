@@ -265,9 +265,11 @@ export default function ChatPage() {
       {/* Header */}
       <header className="w-full flex justify-between items-center px-4 py-3 bg-white/80 backdrop-blur-md border-b border-gray-200 z-20 shrink-0 shadow-sm">
         <div className="flex items-center gap-2">
-          <div className="w-9 h-9 bg-red-500 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-red-500/30 shadow-lg">
-            🧧
-          </div>
+          <img
+            src="/images/app-icon.png"
+            alt=""
+            className="w-9 h-9 rounded-xl object-cover shadow-lg"
+          />
           <div>
             <h1 className="text-lg font-black tracking-tight text-gray-800 leading-none">
               胡言乱语文学
@@ -547,14 +549,16 @@ export default function ChatPage() {
       >
         {showWelcome && (
           <div className="flex flex-col items-center mt-6 mb-8 text-center space-y-6">
-            <div className="w-24 h-24 bg-white rounded-2xl flex items-center justify-center text-5xl shadow-2xl shadow-red-100 border-4 border-white relative rotate-3 transform transition hover:rotate-0 hover:scale-105 duration-300">
-              🧙‍♂️
-              <div className="absolute -bottom-2 -right-2 bg-yellow-400 text-yellow-950 text-xs font-bold px-3 py-1 rounded-full border-2 border-white shadow-sm">
-                军师
-              </div>
+            <div className="w-32 h-32 rounded-2xl overflow-hidden shadow-2xl shadow-red-100 border-4 border-white relative rotate-3 transform transition hover:rotate-0 hover:scale-105 duration-300">
+              <img
+                src="/images/app-icon.png"
+                alt=""
+                className="w-full h-full object-cover"
+              />
+
             </div>
             <div className="space-y-1">
-              <h2 className="text-gray-800 font-bold text-xl">老板，新年快乐！</h2>
+              <h2 className="text-gray-800 font-bold text-xl">🧙‍♂️面对灵魂拷问，用魔法打败魔法</h2>
               <p className="text-gray-500 text-sm max-w-[260px] mx-auto leading-relaxed">
                 遇到三姑六婆刁难不要慌，把问题丢给我。
               </p>
